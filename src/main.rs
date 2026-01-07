@@ -1,15 +1,41 @@
-mod lib;
-use lib::KvStore;
+use clap::{Parser, Subcommand};
+use std::process::exit;
 
-fn main() {
-    let mut store = KvStore::new();
-    
-    store.set("key1".to_string(), "value1".to_string());
-    
-    match store.get("key1".to_string()){
-    	Some(value)=> println!("Found it {value}"),
-    	None => println!("key not found"),
-    }
-    
-    store.remove("key1".to_string());
+#[derive(Parser)]
+#[command(name ="rust_kv")]
+#[command(about = "A distributed key-value store", long_about = None)]
+
+struct Cli{
+	#[command(subcommand)]
+	command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands{
+	Set{
+		key: String,
+		value: String,
+	},
+	Get{
+		key: String,
+	},
+	Rm{
+		key: String,
+	},
+}
+
+fn main(){
+	let cli = Cli::parse();
+	
+	match &cli.command{
+		Commands::Set{key,value}=>{
+			println!("Unimplemented: Set {} to {}", key, value);
+		}
+		Commands::Get{key}=>{
+			println!("Unimplemented: Get {}", key);
+		}
+		Commands::Rm{ key }=>{
+		println!("Unimplemented: Rm {}", key);
+		}
+	}
 }
