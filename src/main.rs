@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use crate::lib::KvStore;
+use anyhow::{Context, Result};
+
 mod lib;
 
 #[derive(Parser)]
@@ -26,14 +28,15 @@ enum Commands{
 	},
 }
 
-fn main(){
+fn main()-> Result<()> {
 	let cli = Cli::parse();
 	
-	let mut store = KvStore::open(PathBuf::from("kv.db")).expect("Unable to open kv.db");
+	let mut store = KvStore::open(PathBuf::from("kv.db"))
+			.context("failed to open the database file")?;
 	
 	match cli.command{
 		Commands::Set{key,value}=>{
-			store.set(key,value).expect("Unable to set value");
+			store.set(key,value).context("failed to save key-value pair")?;
 		}
 		Commands::Get{key}=>{
 			match store.get(key){
@@ -42,7 +45,8 @@ fn main(){
 			}
 		}
 		Commands::Rm{ key }=>{
-			store.remove(key).expect("unable to remove value");
+			store.remove(key).context("failed to remove key")?;
 		}
 	}
+	Ok(())
 }

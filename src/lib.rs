@@ -35,7 +35,8 @@ impl KvStore{
 	
 	pub fn set(&mut self, key: String, value: String)->std::io::Result<()>{
 		self.map.insert(key,value);
-		self.save()
+		self.save()?;
+		Ok(())
 	}
 	
 	pub fn get(&self, key: String)-> Option<String> {
@@ -44,7 +45,8 @@ impl KvStore{
 	
 	pub fn remove(&mut self,key: String)-> std::io::Result<()>{
 		self.map.remove(&key);
-		self.save()
+		self.save()?;
+		Ok(())
 	}
 	
 	fn save(&self) -> std::io::Result<()>{
