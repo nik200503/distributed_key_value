@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use std::process::exit;
+use std::path::PathBuf;
+use crate::lib::KvStore;
+mod lib;
 
 #[derive(Parser)]
 #[command(name ="rust_kv")]
@@ -27,15 +29,20 @@ enum Commands{
 fn main(){
 	let cli = Cli::parse();
 	
-	match &cli.command{
+	let mut store = KvStore::open(PathBuf::from("kv.db")).expect("Unable to open kv.db");
+	
+	match cli.command{
 		Commands::Set{key,value}=>{
-			println!("Unimplemented: Set {} to {}", key, value);
+			store.set(key,value).expect("Unable to set value");
 		}
 		Commands::Get{key}=>{
-			println!("Unimplemented: Get {}", key);
+			match store.get(key){
+				Some(value) => println!("{}",value),
+				None => println!("key not found")
+			}
 		}
 		Commands::Rm{ key }=>{
-		println!("Unimplemented: Rm {}", key);
+			store.remove(key).expect("unable to remove value");
 		}
 	}
 }
