@@ -1,26 +1,25 @@
 use std::io::prelude::*;
 use std::net::TcpStream;
+use rust_kv::{Request, Response};
+use serde_json::de::{Deserializer};
+use serde::{Serialize, Deserialize};
 
 fn main(){
-	match TcpStream::connect("127.0.0.1:4000") {
-		Ok(mut stream) => {
-			println!("Successfully connected to server at port 4000");
-			
-			let msg = "Hello from the client!";
-			stream.write(msg.as_bytes()).unwrap();
-			println!("Sent: {}", msg);
-			
-			let mut buffer = [0; 512];
-			match stream.read(&mut buffer){
-				Ok(bytes_read) => {
-					let response = String::from_utf8_lossy(&buffer[..bytes_read]);
-					println!("Server replied: {}", response);
-				}
-				Err(e) => println!("Failed to read response: {}",e),
-			}
-		},
-		Err(e) => {
-			println!("Failed to connect: {}",e);
-		}
-	}
+
+	let mut stream = TcpStream::connect("127.0.0.1:4000").unwrap();
+	
+	let request = Request::Set{
+		key: "framework".to_string(),
+		value: "actix".to_string(),
+	};
+	
+	serde_json::to_writer(&stream, &request).unwrap();
+	println!("Sent Request: {:?}", request);
+	
+	let mut stream_de = Deserializer::from_reader(&stream);
+	let response : Response = Response::deserialize(&mut stream_de).unwrap();
+	
+	println!("Recived response: {:?}", response);
+	
+	
 }

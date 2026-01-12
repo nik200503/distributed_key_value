@@ -1,39 +1,45 @@
-use std::io::prelude::*;
 use std::net::{TcpListener, TcpStream};
+use rust_kv::{Request, Response};
+use serde_json::de::Deserializer;
+use serde::{Serialize, Deserialize};
+
 
 fn main(){
-	let listener = TcpListener::bind("127.0.0.1:4000").expect("failed to bind to address");
+	let listener = TcpListener::bind("127.0.0.1:4000").unwrap();
 	
-	println!("Server is listening on 127.0.0.1:4000");
+	println!("Server is listening on port 4000");
 	
 	for stream in listener.incoming(){
 		match stream{
 			Ok(stream)=>{
-				println!("New connection established!");
 				handle_connection(stream);
 			}
-			Err(e)=>{
-				println!("Failed to establish connection : {}",e);
-			}
+			Err(e) => println!("connection Failed : {}",e),
 		}
 	}
 }
 
-fn handle_connection(mut stream: TcpStream){
-	let mut buffer = [0; 512];
+fn handle_connection(stream: TcpStream){
+	let mut stream_de = Deserializer::from_reader(&stream);
 	
-	match stream.read(&mut buffer){
-		Ok(bytes_read) => {
-			if bytes_read == 0{
-				return;
-			}
-			
-			let received_data = String::from_utf8_lossy(&buffer[..bytes_read]);
-			println!("Recived: {}", received_data);
-			
-			let response = "Message received";
-			stream.write(response.as_bytes()).unwrap();
-		}
-		Err(e) => println!("Failed to read from connection: {}", e),
+	if let Ok(request) = Request::deserialize(&mut stream_de){
+		println!("Recived request : {:?}", request);
+		
+		let response = match request{
+			Request::Set {key, value} => {
+				println!("user wants to SET {} to GET {}", key, value);
+				Response::Ok(Some("mock_value".to_string()))
+			},
+			Request::Get {key} =>{
+				println!("user wants to GET {}", key);
+				Response::Err("Key not found".to_string())
+			},
+			Request::Remove{ key }=>{
+				println!("User wants to REMOVE {}", key);
+				Response::Err("Key not found".to_string())
+			},
+		};
+		
+		serde_json::to_writer(&stream, &response).unwrap();
 	}
 }
