@@ -1,25 +1,52 @@
-use std::io::prelude::*;
+use clap::{Parser, Subcommand};
 use std::net::TcpStream;
 use rust_kv::{Request, Response};
 use serde_json::de::{Deserializer};
 use serde::{Serialize, Deserialize};
+use std::process::exit;
+
+#[derive(Parser)]
+#[command(name= "kvs-client")]
+struct Cli{
+	#[command(subcommand)]
+	command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands{
+	Set {key: String, value: String},
+	Get { key: String},
+	Rm { key: String},
+}
+
+
+
 
 fn main(){
+	let cli = Cli::parse();
 
-	let mut stream = TcpStream::connect("127.0.0.1:4000").unwrap();
-	
-	let request = Request::Set{
-		key: "framework".to_string(),
-		value: "actix".to_string(),
+	let request = match cli.command{
+		Commands::Set {key, value} => Request::Set{key, value},
+		Commands::Get {key} => Request::Get {key},
+		Commands::Rm {key} => Request::Remove{key},
 	};
 	
+	let stream = TcpStream::connect("127.0.0.1:4000").unwrap_or_else(|_| {
+		eprintln!("Couldn't connect to server. is it running?");
+		exit(1);
+	});
+	
 	serde_json::to_writer(&stream, &request).unwrap();
-	println!("Sent Request: {:?}", request);
 	
-	let mut stream_de = Deserializer::from_reader(&stream);
-	let response : Response = Response::deserialize(&mut stream_de).unwrap();
+	let mut stream_de= Deserializer::from_reader(&stream);
+	let response = Response::deserialize(&mut stream_de).unwrap();
 	
-	println!("Recived response: {:?}", response);
-	
-	
+	match response {
+		Response::Ok(Some(val)) => println!("{}", val),
+		Response::Ok(None) => {},
+		Response::Err(e) => {
+			eprintln!("Errpr: {}",e);
+			exit(1);
+		},
+	}
 }
