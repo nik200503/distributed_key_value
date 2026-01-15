@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use serde_json::Deserializer;
 use std::io::Seek;
+use log::{info, debug};
 
 pub struct KvStore{
 	map: HashMap<String,String>,
@@ -34,6 +35,7 @@ impl KvStore{
 		
 		let stream = Deserializer::from_reader(reader).into_iter::<Command>();
 		
+		let mut count = 0;
 		for command in stream{
 			match command?{
 				Command::Set{key, value} => {
@@ -43,7 +45,11 @@ impl KvStore{
 					map.remove(&key);
 				}
 			}
+			count+=1;
 		}
+		
+		info!("Recovered {} commands from log file", count);
+		debug!("Current keys in memory: {}", map.len());
 		
 		Ok(KvStore {
 			map,
@@ -85,6 +91,7 @@ impl KvStore{
 	}
 	
 	pub fn compact(&mut self) ->io::Result<()> {
+		info!("Starting background compaction...");
 		let mut compaction_path = self.path.clone();
 		compaction_path.set_extension("rdb.tmp");
 		
@@ -113,6 +120,7 @@ impl KvStore{
 			.open(&self.path)?;
 		self.writer = BufWriter::new(file);
 		
+		info!("Compaction completed. Old log file removed");
 		Ok(())
 	}
 }
