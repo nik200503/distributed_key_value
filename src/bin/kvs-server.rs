@@ -47,6 +47,13 @@ fn handle_connection(stream: TcpStream, store: &mut KvStore){
 					Err(e) => Response::Err(e.to_string()),
 				}
 			},
+			Request::Compact =>{
+				println!("Compacting database...");
+				match store.compact(){
+					Ok(_) => Response::Ok(None),
+					Err(e) => Response::Err(e.to_string()),
+				}
+			},
 		};
 		
 		serde_json::to_writer(&stream, &response).unwrap();

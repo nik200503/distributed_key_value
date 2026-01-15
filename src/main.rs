@@ -47,6 +47,7 @@ fn main()-> Result<()> {
 		Commands::Rm{ key }=>{
 			store.remove(key).context("failed to remove key")?;
 		}
+		Commands::Compact => Request::Compact,
 	}
 	Ok(())
 }

@@ -17,6 +17,7 @@ enum Commands{
 	Set {key: String, value: String},
 	Get { key: String},
 	Rm { key: String},
+	Compact,
 }
 
 
@@ -29,6 +30,7 @@ fn main(){
 		Commands::Set {key, value} => Request::Set{key, value},
 		Commands::Get {key} => Request::Get {key},
 		Commands::Rm {key} => Request::Remove{key},
+		Commands::Compact => Request::Compact,
 	};
 	
 	let stream = TcpStream::connect("127.0.0.1:4000").unwrap_or_else(|_| {

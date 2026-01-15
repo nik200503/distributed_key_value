@@ -4,16 +4,19 @@ use std::io::{self,BufReader, BufWriter, Write};
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use serde_json::Deserializer;
+use std::io::Seek;
 
 pub struct KvStore{
 	map: HashMap<String,String>,
 	writer: BufWriter<File>,
+	path: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Command{
 	Set {key: String, value: String},
 	Remove{key: String},
+	
 }
 
 impl KvStore{
@@ -45,6 +48,7 @@ impl KvStore{
 		Ok(KvStore {
 			map,
 			writer: BufWriter::new(file),
+			path,
 		})
 	}
 	
@@ -79,6 +83,38 @@ impl KvStore{
 			Err(io::Error::new(io::ErrorKind::NotFound, "key not found"))
 		}
 	}
+	
+	pub fn compact(&mut self) ->io::Result<()> {
+		let mut compaction_path = self.path.clone();
+		compaction_path.set_extension("rdb.tmp");
+		
+		let file = OpenOptions::new()
+			.create(true)
+			.write(true)
+			.truncate(true)
+			.open(&compaction_path)?;
+		let mut new_writer = BufWriter::new(file);
+		
+		for (key, value) in &self.map {
+			let cmd = Command::Set{
+				key: key.clone(),
+				value: value.clone()
+			};
+			serde_json::to_writer(&mut new_writer, &cmd)?;
+		}
+		new_writer.flush()?;
+		
+		fs::rename(&compaction_path, &self.path)?;
+		
+		let file = OpenOptions::new()
+			.create(true)
+			.write(true)
+			.append(true)
+			.open(&self.path)?;
+		self.writer = BufWriter::new(file);
+		
+		Ok(())
+	}
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,6 +122,7 @@ pub enum Request{
 	Get {key : String},
 	Set {key: String, value: String},
 	Remove {key: String},
+	Compact,
 }
 
 #[derive(Debug, Serialize,Deserialize)]
