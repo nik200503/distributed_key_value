@@ -3,6 +3,8 @@ use rust_kv::{KvStore, Request, Response};
 use serde_json::de::Deserializer;
 use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 
 fn main(){
@@ -12,21 +14,29 @@ fn main(){
 	
 	let mut store = KvStore::open(PathBuf::from("kv.db")).expect("failed to bind");
 	
+	let shared_store = Arc::new(Mutex::new(store));
+	
 	for stream in listener.incoming(){
 		match stream{
 			Ok(stream)=>{
-				handle_connection(stream, &mut store);
+			
+				let store_handle = shared_store.clone();
+				println!("New connection! Spawning thread...");
+				thread::spawn(move || {
+					handle_connection(stream, store_handle);
+				});
 			}
 			Err(e) => println!("connection Failed : {}",e),
 		}
 	}
 }
 
-fn handle_connection(stream: TcpStream, store: &mut KvStore){
+fn handle_connection(stream: TcpStream, db: Arc<Mutex<KvStore>>){
 	let mut stream_de = Deserializer::from_reader(&stream);
 	
-	if let Ok(request) = Request::deserialize(&mut stream_de){
+	while let Ok(request) = Request::deserialize(&mut stream_de){
 		println!("Processing : {:?}", request);
+		let mut store = db.lock().unwrap();
 		
 		let response = match request{
 			Request::Set {key, value} => {
@@ -56,6 +66,8 @@ fn handle_connection(stream: TcpStream, store: &mut KvStore){
 			},
 		};
 		
-		serde_json::to_writer(&stream, &response).unwrap();
+		if serde_json::to_writer(&stream, &response).is_err(){
+			break;
+		};
 	}
 }
