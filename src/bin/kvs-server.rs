@@ -5,14 +5,29 @@ use serde::{Serialize, Deserialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use clap::Parser;
 
+#[derive(Parser)]
+#[command(version, about, long_about=None)]
+struct ServerCli{
+	#[arg(long , default_value = "127.0.0.1")]
+	addr: String,
+	
+	#[arg(long, default_value = "4000")]
+	port: u16,
+}
 
 fn main(){
-	let listener = TcpListener::bind("127.0.0.1:4000").expect("Failed to bind");
+
+	let args = ServerCli::parse();
 	
-	println!("Server is listening on port 4000");
+	let bind_addr = format!("{}:{}", args.addr, args.port);
 	
-	let mut store = KvStore::open(PathBuf::from("kv.db")).expect("failed to bind");
+	let listener = TcpListener::bind(&bind_addr).expect("Failed to bind");
+	
+	println!("Server is listening on port {}", bind_addr);
+	
+	let store = KvStore::open(PathBuf::from("kv.db")).expect("failed to open db");
 	
 	let shared_store = Arc::new(Mutex::new(store));
 	
@@ -21,7 +36,6 @@ fn main(){
 			Ok(stream)=>{
 			
 				let store_handle = shared_store.clone();
-				println!("New connection! Spawning thread...");
 				thread::spawn(move || {
 					handle_connection(stream, store_handle);
 				});
@@ -35,7 +49,6 @@ fn handle_connection(stream: TcpStream, db: Arc<Mutex<KvStore>>){
 	let mut stream_de = Deserializer::from_reader(&stream);
 	
 	while let Ok(request) = Request::deserialize(&mut stream_de){
-		println!("Processing : {:?}", request);
 		let mut store = db.lock().unwrap();
 		
 		let response = match request{

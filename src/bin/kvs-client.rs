@@ -8,6 +8,9 @@ use std::process::exit;
 #[derive(Parser)]
 #[command(name= "kvs-client")]
 struct Cli{
+	#[arg(long, default_value = "127.0.0.1:4000")]
+	addr: String,
+	
 	#[command(subcommand)]
 	command: Commands,
 }
@@ -33,22 +36,27 @@ fn main(){
 		Commands::Compact => Request::Compact,
 	};
 	
-	let stream = TcpStream::connect("127.0.0.1:4000").unwrap_or_else(|_| {
-		eprintln!("Couldn't connect to server. is it running?");
+	let stream = TcpStream::connect(&cli.addr).unwrap_or_else(|_| {
+		eprintln!("Couldn't connect to server at {}. is it running?", cli.addr);
 		exit(1);
 	});
 	
 	serde_json::to_writer(&stream, &request).unwrap();
 	
 	let mut stream_de= Deserializer::from_reader(&stream);
-	let response = Response::deserialize(&mut stream_de).unwrap();
 	
-	match response {
+	match Response::deserialize(&mut stream_de) {
+		Ok(response) => match response {
 		Response::Ok(Some(val)) => println!("{}", val),
 		Response::Ok(None) => {},
 		Response::Err(e) => {
 			eprintln!("Errpr: {}",e);
 			exit(1);
 		},
+	},
+	Err(_) => {
+		eprintln!("Failed to parse response from server.");
+		exit(1);
+	}
 	}
 }
