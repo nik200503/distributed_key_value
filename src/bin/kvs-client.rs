@@ -25,7 +25,7 @@ enum Commands {
 
 fn main() {
     let cli = Cli::parse();
-    
+
     let is_get = match &cli.command {
         Commands::Get { .. } => true,
         _ => false,
@@ -54,7 +54,7 @@ fn main() {
                 if is_get {
                     println!("key not found");
                 }
-            },
+            }
             Response::Err(e) => {
                 eprintln!("Errpr: {}", e);
                 exit(1);

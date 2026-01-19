@@ -42,9 +42,8 @@ fn main() -> Result<()> {
             store.remove(key).context("failed to remove key")?;
         }
         Commands::Compact => {
-    		store.compact().context("failed to compact database")?;
-	}
-
+            store.compact().context("failed to compact database")?;
+        }
     }
     Ok(())
 }
