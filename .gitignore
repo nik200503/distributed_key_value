@@ -1,3 +1,4 @@
 /target
 /src/*.db
-
+/.gitignore
+/kv.db
