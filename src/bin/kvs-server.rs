@@ -5,9 +5,9 @@ use serde::Deserialize;
 use serde_json::de::Deserializer;
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::process::exit;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 enum ServerRole {
@@ -29,6 +29,9 @@ struct ServerCli {
 
     #[arg(long)]
     leader_addr: Option<String>,
+
+    #[arg(long)]
+    follower_addr: Option<String>,
 }
 
 fn main() {
@@ -68,8 +71,9 @@ fn main() {
             Ok(stream) => {
                 let store_handle = shared_store.clone();
                 let current_role = args.role;
+                let follower_addr = args.follower_addr.clone();
                 thread::spawn(move || {
-                    handle_connection(stream, store_handle, current_role);
+                    handle_connection(stream, store_handle, current_role, follower_addr);
                 });
             }
             Err(e) => error!("connection Failed : {}", e),
@@ -77,47 +81,93 @@ fn main() {
     }
 }
 
-fn handle_connection(stream: TcpStream, db: Arc<Mutex<KvStore>>, role: ServerRole) {
+fn handle_connection(
+    stream: TcpStream,
+    db: Arc<Mutex<KvStore>>,
+    role: ServerRole,
+    follower_addr: Option<String>,
+) {
     let peer_addr = stream.peer_addr().unwrap();
-    info!("New connection from {}", peer_addr);
-
     let mut stream_de = Deserializer::from_reader(&stream);
 
     while let Ok(request) = Request::deserialize(&mut stream_de) {
         let mut store = db.lock().unwrap();
 
         let response = match request {
-            Request::Set { .. } | Request::Remove { .. } | Request::Compact => {
+            Request::Set { ref key, ref value } => {
                 if role == ServerRole::Follower {
-                    Response::Err(
-                        "Write command rejected: I am a Follower. Connect to Leader.".to_string(),
-                    )
+                    Response::Err("Write command rejected: connect to leader.".to_string())
                 } else {
-                    match request {
-                        Request::Set { key, value } => match store.set(key, value) {
-                            Ok(_) => Response::Ok(None),
-                            Err(e) => Response::Err(e.to_string()),
-                        },
-                        Request::Remove { key } => match store.remove(key) {
-                            Ok(_) => Response::Ok(None),
-                            Err(e) => Response::Err(e.to_string()),
-                        },
-                        Request::Compact => match store.compact() {
-                            Ok(_) => Response::Ok(None),
-                            Err(e) => Response::Err(e.to_string()),
-                        },
-                        _ => Response::Err("Internal Error".to_string()),
+                    match store.set(key.clone(), value.clone()) {
+                        Ok(_) => {
+                            if let Some(addr) = &follower_addr {
+                                replicate_to_follower(
+                                    addr,
+                                    Request::Set {
+                                        key: key.clone(),
+                                        value: value.clone(),
+                                    },
+                                );
+                            }
+                            Response::Ok(None)
+                        }
+                        Err(e) => Response::Err(e.to_string()),
                     }
                 }
             }
+            Request::Remove { ref key } => {
+                if role == ServerRole::Follower {
+                    Response::Err("Write command rejected.".to_string())
+                } else {
+                    match store.remove(key.clone()) {
+                        Ok(_) => {
+                            if let Some(addr) = &follower_addr {
+                                replicate_to_follower(addr, Request::Remove { key: key.clone() });
+                            }
+                            Response::Ok(None)
+                        }
+                        Err(e) => Response::Err(e.to_string()),
+                    }
+                }
+            }
+            Request::ReplicateSet { key, value } => match store.set(key, value) {
+                Ok(_) => Response::Ok(None),
+                Err(e) => Response::Err(e.to_string()),
+            },
+            Request::ReplicateRm { key } => match store.remove(key) {
+                Ok(_) => Response::Ok(None),
+                Err(e) => Response::Err(e.to_string()),
+            },
             Request::Get { key } => match store.get(key) {
                 Some(val) => Response::Ok(Some(val)),
                 None => Response::Ok(None),
             },
+            _ => Response::Ok(None),
         };
 
         if serde_json::to_writer(&stream, &response).is_err() {
             break;
+        }
+    }
+}
+
+fn replicate_to_follower(follower_addr: &str, req: Request) {
+    let repl_req = match req {
+        Request::Set { key, value } => Request::ReplicateSet { key, value },
+        Request::Remove { key } => Request::ReplicateRm { key },
+        _ => return,
+    };
+
+    match TcpStream::connect(follower_addr) {
+        Ok(stream) => {
+            info!("Replicating to follower at {}", follower_addr);
+
+            if let Err(e) = serde_json::to_writer(&stream, &repl_req) {
+                error!("Failed to send replication data: {}", e);
+            }
+        }
+        Err(e) => {
+            error!("Failed to connect to Follower at {}: {}", follower_addr, e);
         }
     }
 }

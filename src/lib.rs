@@ -126,6 +126,9 @@ pub enum Request {
     Set { key: String, value: String },
     Remove { key: String },
     Compact,
+
+    ReplicateSet { key: String, value: String },
+    ReplicateRm { key: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
