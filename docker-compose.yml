@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  leader:
+    build: .
+    # ADDED: --addr 0.0.0.0
+    command: kvs-server --role leader --addr 0.0.0.0 --port 4000 --follower-addr follower:4001
+    ports:
+      - "4000:4000"
+    networks:
+      - kvs-net
+
+  follower:
+    build: .
+    # ADDED: --addr 0.0.0.0
+    command: kvs-server --role follower --addr 0.0.0.0 --port 4001 --leader-addr leader:4000
+    depends_on:
+      - leader
+    ports:
+      - "4001:4001"
+    networks:
+      - kvs-net
+
+networks:
+  kvs-net:
