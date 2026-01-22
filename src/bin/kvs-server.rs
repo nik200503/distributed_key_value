@@ -142,6 +142,10 @@ fn handle_connection(
                 Some(val) => Response::Ok(Some(val)),
                 None => Response::Ok(None),
             },
+            Request::Scan { start, end} => {
+                let result = store.scan(start, end);
+                Response::ScanResult(result)
+            },
             _ => Response::Ok(None),
         };
 

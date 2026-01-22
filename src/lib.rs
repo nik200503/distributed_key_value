@@ -1,15 +1,33 @@
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
-use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::path::PathBuf;
+use std::collections::BTreeMap;
 
 pub struct KvStore {
-    map: HashMap<String, String>,
+    map: BTreeMap<String, String>,
     writer: BufWriter<File>,
     path: PathBuf,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Request{
+    Get { key: String},
+    Set { key: String, value:String},
+    Remove { key: String},
+    Compact,
+    Scan { start: String, end: String},
+    ReplicateSet { key: String, value: String},
+    ReplicateRm {key: String},
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Response {
+    Ok(Option<String>),
+    Err(String),
+    ScanResult(Vec<(String, String)>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -26,7 +44,7 @@ impl KvStore {
             .read(true)
             .open(&path)?;
 
-        let mut map = HashMap::new();
+        let mut map = BTreeMap::new();
 
         let reader = BufReader::new(File::open(&path)?);
 
@@ -118,21 +136,10 @@ impl KvStore {
         info!("Compaction completed. Old log file removed");
         Ok(())
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Request {
-    Get { key: String },
-    Set { key: String, value: String },
-    Remove { key: String },
-    Compact,
-
-    ReplicateSet { key: String, value: String },
-    ReplicateRm { key: String },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Response {
-    Ok(Option<String>),
-    Err(String),
+    pub fn scan(&self, start: String, end: String) -> Vec<(String, String)>{
+        self.map
+            .range(start..end)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
 }

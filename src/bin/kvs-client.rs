@@ -21,6 +21,10 @@ enum Commands {
     Get { key: String },
     Rm { key: String },
     Compact,
+    Scan {
+        start: String,
+        end: String
+    },
 }
 
 fn main() {
@@ -33,6 +37,7 @@ fn main() {
         Commands::Get { key } => Request::Get { key },
         Commands::Rm { key } => Request::Remove { key },
         Commands::Compact => Request::Compact,
+        Commands::Scan { start, end } => Request::Scan { start, end},
     };
 
     let stream = TcpStream::connect(&cli.addr).unwrap_or_else(|_| {
@@ -46,6 +51,12 @@ fn main() {
 
     match Response::deserialize(&mut stream_de) {
         Ok(response) => match response {
+            Response::ScanResult(pairs) => {
+                println!("Found {} keys:", pairs.len());
+                for (k, v) in pairs {
+                    println!("{} = {}", k, v);
+                }
+            }
             Response::Ok(Some(val)) => println!("{}", val),
             Response::Ok(None) => {
                 if is_get {
