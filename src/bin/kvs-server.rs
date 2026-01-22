@@ -87,7 +87,7 @@ fn handle_connection(
     role: ServerRole,
     follower_addr: Option<String>,
 ) {
-    let peer_addr = stream.peer_addr().unwrap();
+    let _peer_addr = stream.peer_addr().unwrap();
     let mut stream_de = Deserializer::from_reader(&stream);
 
     while let Ok(request) = Request::deserialize(&mut stream_de) {

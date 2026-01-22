@@ -26,10 +26,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    let is_get = match &cli.command {
-        Commands::Get { .. } => true,
-        _ => false,
-    };
+    let is_get = matches!(cli.command, Commands::Get { .. });
 
     let request = match cli.command {
         Commands::Set { key, value } => Request::Set { key, value },

@@ -15,11 +15,11 @@ impl ManageConnection for KvConnectionManager {
     type Connection = TcpStream;
     type Error = std::io::Error;
 
-    fn connect(&self) -> Result<TcpStream, self: Error> {
+    fn connect(&self) -> Result<TcpStream, std::io::Error> {
         TcpStream::connect(&self.addr)
     }
 
-    fn is_valid(&self, _conn: &mut TcpStream) -> Result<(), self::Error> {
+    fn is_valid(&self, _conn: &mut TcpStream) -> Result<(), std::io::Error> {
         Ok(())
     }
 
@@ -59,7 +59,7 @@ fn main() {
                 data.read_to_string(&mut value).unwrap();
 
                 let kv_req = Request::Set {key, value};
-                match send_to_db(kv_req){
+                match send_to_db(&mut conn,kv_req){
                     Ok(_) => Response::text("Success"),
                     Err(e) => Response::text(format!("DB Error: {}", e)).with_status_code(500),
                 }
@@ -73,7 +73,7 @@ fn main() {
 fn send_to_db(stream: &mut TcpStream, req: Request) -> Result<Option<String>, String> {
     serde_json::to_writer(stream.try_clone().unwrap(), &req).map_err(|e| e.to_string())?;
 
-    let mut stream_de = Deserializer::from_reader(&stream);
+    let mut stream_de = Deserializer::from_reader(stream);
     let resp = KvResponse::deserialize(&mut stream_de).map_err(|e| e.to_string())?;
 
     match resp {
