@@ -1,8 +1,6 @@
-use log::{debug, info};
 use serde::{Deserialize, Serialize};
-use serde_json::Deserializer;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Write, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::collections::BTreeMap;
 
@@ -46,25 +44,20 @@ impl KvStore {
 
         let mut map = BTreeMap::new();
 
-        let reader = BufReader::new(File::open(&path)?);
+        let mut reader = BufReader::new(File::open(&path)?);
 
-        let stream = Deserializer::from_reader(reader).into_iter::<Command>();
-
-        let mut count = 0;
-        for command in stream {
-            match command? {
-                Command::Set { key, value } => {
-                    map.insert(key, value);
+        loop {
+            let pos = reader.stream_position()?; 
+            match bincode::deserialize_from::<_, Command>(&mut reader) {
+                Ok(command) => {
+                    match command {
+                        Command::Set { key, value } => { map.insert(key, value); }
+                        Command::Remove { key } => { map.remove(&key); }
+                    }
                 }
-                Command::Remove { key } => {
-                    map.remove(&key);
-                }
+                Err(_) => break, 
             }
-            count += 1;
         }
-
-        info!("Recovered {} commands from log file", count);
-        debug!("Current keys in memory: {}", map.len());
 
         Ok(KvStore {
             map,
@@ -79,7 +72,7 @@ impl KvStore {
             value: value.clone(),
         };
 
-        serde_json::to_writer(&mut self.writer, &cmd)?;
+        bincode::serialize_into(&mut self.writer, &cmd).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         self.writer.flush()?;
 
         self.map.insert(key, value);
@@ -94,7 +87,7 @@ impl KvStore {
         if self.map.contains_key(&key) {
             let cmd = Command::Remove { key: key.clone() };
 
-            serde_json::to_writer(&mut self.writer, &cmd)?;
+            bincode::serialize_into(&mut self.writer, &cmd).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             self.writer.flush()?;
 
             self.map.remove(&key);
@@ -105,7 +98,6 @@ impl KvStore {
     }
 
     pub fn compact(&mut self) -> io::Result<()> {
-        info!("Starting background compaction...");
         let mut compaction_path = self.path.clone();
         compaction_path.set_extension("rdb.tmp");
 
@@ -121,7 +113,7 @@ impl KvStore {
                 key: key.clone(),
                 value: value.clone(),
             };
-            serde_json::to_writer(&mut new_writer, &cmd)?;
+            bincode::serialize_into(&mut self.writer, &cmd).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         }
         new_writer.flush()?;
 
@@ -133,7 +125,6 @@ impl KvStore {
             .open(&self.path)?;
         self.writer = BufWriter::new(file);
 
-        info!("Compaction completed. Old log file removed");
         Ok(())
     }
     pub fn scan(&self, start: String, end: String) -> Vec<(String, String)>{
