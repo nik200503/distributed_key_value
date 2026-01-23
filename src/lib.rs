@@ -3,6 +3,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Write, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::collections::BTreeMap;
+use crc32fast::Hasher;
+use std::io::Read;
 
 pub struct KvStore {
     map: BTreeMap<String, String>,
@@ -48,15 +50,39 @@ impl KvStore {
 
         loop {
             let pos = reader.stream_position()?; 
-            match bincode::deserialize_from::<_, Command>(&mut reader) {
-                Ok(command) => {
-                    match command {
-                        Command::Set { key, value } => { map.insert(key, value); }
-                        Command::Remove { key } => { map.remove(&key); }
-                    }
-                }
-                Err(_) => break, 
+            let checksum: u32 = match bincode::deserialize_from(&mut reader){
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            
+            let len:u64 = match bincode::deserialize_from(&mut reader){
+                Ok(l) => l,
+                Err(_) => break,
+            };
+            
+            let mut payload = vec![0u8; len as usize];
+            if let Err(_) = reader.read_exact(&mut payload){ 
+                break;
             }
+            
+            let mut hasher = Hasher::new();
+            hasher.update(&payload);
+            if hasher.finalize() != checksum {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Data Corruption detected: CRC mismatch"));
+            }
+            let command: Command = bincode::deserialize(&payload)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+            match command {
+                Command::Set { key, value } => {
+                    map.insert(key, value);
+                }
+                Command::Remove { key } => {
+                    map.remove(&key);
+                }
+            }
+            
+            
         }
 
         Ok(KvStore {
@@ -71,9 +97,8 @@ impl KvStore {
             key: key.clone(),
             value: value.clone(),
         };
-
-        bincode::serialize_into(&mut self.writer, &cmd).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-        self.writer.flush()?;
+        
+        self.save_record(&cmd)?;
 
         self.map.insert(key, value);
         Ok(())
@@ -86,10 +111,7 @@ impl KvStore {
     pub fn remove(&mut self, key: String) -> std::io::Result<()> {
         if self.map.contains_key(&key) {
             let cmd = Command::Remove { key: key.clone() };
-
-            bincode::serialize_into(&mut self.writer, &cmd).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-            self.writer.flush()?;
-
+            self.save_record(&cmd)?;
             self.map.remove(&key);
             Ok(())
         } else {
@@ -132,5 +154,27 @@ impl KvStore {
             .range(start..end)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
+    }
+    
+    fn save_record(&mut self, cmd: &Command) -> io::Result<()>{
+        let payload = bincode::serialize(cmd)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        let mut hasher = Hasher::new();
+        hasher.update(&payload);
+        let checksum = hasher.finalize();
+        
+        let len = payload.len() as u64;
+        
+        bincode::serialize_into(&mut self.writer, &checksum)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        bincode::serialize_into(&mut self.writer, &len)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            
+        self.writer.write_all(&payload)?;
+        self.writer.flush()?;
+        
+        Ok(())
     }
 }

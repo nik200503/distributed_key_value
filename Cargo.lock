@@ -931,6 +931,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap",
+ "crc32fast",
  "env_logger",
  "log",
  "r2d2",
