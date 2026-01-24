@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::collections::BTreeMap;
 use crc32fast::Hasher;
 use std::io::Read;
+use snap::raw::{Decoder, Encoder};
 
 pub struct KvStore {
     map: BTreeMap<String, String>,
@@ -60,17 +61,22 @@ impl KvStore {
                 Err(_) => break,
             };
             
-            let mut payload = vec![0u8; len as usize];
-            if let Err(_) = reader.read_exact(&mut payload){ 
+            let mut compressed_payload = vec![0u8; len as usize];
+            if let Err(_) = reader.read_exact(&mut compressed_payload){ 
                 break;
             }
             
             let mut hasher = Hasher::new();
-            hasher.update(&payload);
+            hasher.update(&compressed_payload);
             if hasher.finalize() != checksum {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Data Corruption detected: CRC mismatch"));
             }
-            let command: Command = bincode::deserialize(&payload)
+            
+            let raw_payload = Decoder::new()
+                .decompress_vec(&compressed_payload)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            
+            let command: Command = bincode::deserialize(&raw_payload)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
             match command {
@@ -157,14 +163,18 @@ impl KvStore {
     }
     
     fn save_record(&mut self, cmd: &Command) -> io::Result<()>{
-        let payload = bincode::serialize(cmd)
+        let raw_payload = bincode::serialize(cmd)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        
+        let compressed_payload = Encoder::new()
+            .compress_vec(&raw_payload)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         
         let mut hasher = Hasher::new();
-        hasher.update(&payload);
+        hasher.update(&compressed_payload);
         let checksum = hasher.finalize();
         
-        let len = payload.len() as u64;
+        let len = compressed_payload.len() as u64;
         
         bincode::serialize_into(&mut self.writer, &checksum)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
@@ -172,7 +182,7 @@ impl KvStore {
         bincode::serialize_into(&mut self.writer, &len)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
             
-        self.writer.write_all(&payload)?;
+        self.writer.write_all(&compressed_payload)?;
         self.writer.flush()?;
         
         Ok(())
